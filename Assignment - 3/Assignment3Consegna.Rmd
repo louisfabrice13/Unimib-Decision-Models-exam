@@ -1,0 +1,299 @@
+---
+title: "Assignment 3 - The free position facility location problem"
+author: "Louis Fabrice Tshimanga"
+date: "18 May 2019"
+course: "Decision Models"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: vignette
+    toc: yes
+    toc_depth: 5
+    df_print: paged
+---
+
+
+## The Problem
+
+In this assignment we will look at the **Facility Location Problem**. 
+The problem can be described in general terms as follows: 
+
+We must decide the placement of  a facility that distributes a certain good to a group of consumers that need it.
+
+The placement must be chosen  in order to **minimize** the total compound distance from the facility and the customers. 
+
+The following assumptions has to be taken into account:
+
+1. The possible location for the facility is unknown, that is, the problem is to find the right spot to build it.
+2. The facility building costs are fixed and  independent from the position of the building site. 
+ 
+
+
+Notice that  in this scenario  there is one possible decision to make: 
+
+- where to build the facility, that is, find the position ($\chi$, $\upsilon$) that minimises the compound distance of the facility with respect to all custumers.
+
+### Data
+
+A file with the locations of the consumers can be  found in  the `Data` folder. 
+
+## Distance function
+
+Given the position of the facility $f= (\chi, \upsilon)$ and of a consumer $p_i=(x_i, y_i)$ use the following formula to calculate the distance between them. 
+
+$$
+d(f,p_i) = log((\chi-x_i)^2+1) + log((\upsilon-y_i)^2+1)
+$$
+
+## The assignment
+
+1. Formulate the objective function to minimize for the described problem.   
+Answer:
+
+$$
+F(f)=\sum_{p_i \in P} d(f,p_i) = \sum_{p_i \in P} log((\chi-x_i)^2+1) + log((\upsilon-y_i)^2+1)
+$$
+$$
+with\  P =\{p_i \ \ in \ Data\}, \ 100 \ data points
+$$
+$F(f)$ with 100 parameters $p_i$ is the function to be **minimized**, implemented in R as "Fulldistance", where "distance" is $d(f,p_i)$.
+$F(f)$ is a scalar field of a 2D space. Its gradient is a 2D-vector field.
+
+```{r}
+distance <- function(f, x_i, y_i) {
+  chi<-f[1]
+  nu<-f[2]
+  d = log((chi-x_i)^2+1) + log((nu-y_i)^2+1)
+  return(d)
+}
+
+Fulldistance <- function(f, xs, ys) {
+  D = 0
+  if(length(xs)==length(ys)){
+    for(i in 1:length(xs)){
+      d = distance(f, xs[i], ys[i])
+      D = D + d
+    }#end of for-cycle; it gives the sum of all distances
+    return(D)
+  }#end of if-statement
+}
+```
+```{r, echo=FALSE}
+Data<- read.csv("C:/Users/louis/Desktop/Data Science/1.2/Decision Models/Assignments/Assignment 3/consumer_locations.csv")
+```
+Beware there's the hidden code to load the data, it must be updated with the current location.  
+  
+  
+    
+    
+2. Express in analytical form the gradient for the objective to be minimized.  
+Answer:  
+
+$$
+\nabla d = \left[\ \frac{\partial d}{\partial \chi} \ \ \ \ \ \frac{\partial d}{\partial \nu} \ \right]
+\\
+\frac{\partial d(\chi,\nu,p_i)}{\partial \chi} = \frac{1}{((\chi-x_i)^2+1)}\cdot2(\chi-x_i)
+\\
+\frac{\partial d(\chi,\nu,p_i)}{\partial \nu} = 
+\frac{1}{((\nu-y_i)^2+1)}\cdot2(\nu-y_i)
+$$
+Knowing that (given $D[]$ as the derivative operator)
+$$
+D[log(function)]=\frac{1}{function}\cdot D[function]
+$$
+Both the sum and the derivative operators are linear, hence the sum of derivatives and the derivative of the sums are the same mathematical entity.  
+Thus, at last
+$$
+\nabla F(f=(\chi,\nu)) =  \nabla\sum_{p_i \in P} d(f) = \sum_{p_i \in P} \nabla d(f)
+\\
+\nabla F(f) =  \sum_{p_i \in P} \left[\ \frac{\partial d(f)}{\partial \chi} \ \ \ \ \ \frac{\partial d(f)}{\partial \nu} \ \right]=
+\\
+=\left[\sum_{i = 1}^{100}\frac{\partial d(\chi,\nu,p_i)}{\partial \chi} 
+\ \ \ \sum_{i = 1}^{100}\frac{\partial d(\chi,\nu,p_i)}{\partial \nu}\right]
+$$
+```{r}
+#this is specifically adapted to the study case
+graddist <- function(f, x_i, y_i){ #gradient of distance(f, p_i)
+  chi<-f[1]
+  nu<-f[2]
+  
+  gd1 = 2*(chi-x_i)/((chi-x_i)^2+1)
+  gd2 = 2*(nu-y_i)/((nu-y_i)^2+1)
+  
+  gd=c(gd1,gd2)
+  return(gd)
+}
+
+
+GradFullDist <- function(f, xs, ys){ #gradient of FullDistance(f, set of all points)
+  GFD = c(0,0)
+  for(i in 1:length(xs)){
+    GFD = GFD+graddist(f, xs[i], ys[i])
+  } #end of for cycle, the gradient components of F are the sums of the 
+  #gradient components of d, as analytcally showed above
+  return(GFD)
+}
+```
+
+3. Implement the `Gradiend Descent method` and solve the problem with it.  
+Answer:  
+The Gradient Descent method finds the local optimum point of a differentiable function (the point with zero derivatives) "descending" the function in the direction suggested by its gradient, and with the sign depending on wether we're seeking a minimum or a maximum.
+In this case, we're looking for a minimization of the "Full Distance" function of any given point, so at every iteration we'd take a step in the opposite direction of the gradient (which itself points to the steepest ascent), following then the steepest descent.
+The "stepsize modulator" will be initially taken as an educated guess, and kept costant, but its size can be adapted to obtain a better, adaptive learning rate; the direction, instead, can change at any iteration, due to the shape of the function.  
+  
+So, at iteration k+1, the candidate point (or position-vector) is
+$$
+x_{k+1}=x_k-s\nabla F(x_k)
+$$
+with learning rate (modulating the stepsize) equal to '$s$'. If either the gradient is zero, or the distance between consecutive candidates is small enough, or the iterations have reached the maximum allowed, we stop the search process.
+
+```{r}
+#bivariate-function implementation of the Gradient Descent Method, specific to the study case, with fixed learning rate
+Function<-function(x){Fulldistance(x, Data$x, Data$y)}
+Gradient<-function(x){GradFullDist(x, Data$x, Data$y)}
+
+GDM <- function(starter, Function, Gradient, LR=0.01, max_iter=10000, tol=0.000000001) {
+  step = LR
+  iterations = 0
+  
+  normae<-function(v){return(sqrt(sum(v*v))) } #to check later if the difference between
+  #candidates in consecutive iterations is small enough (see tol)
+  
+  for (i in 1:max_iter){
+    gradient<-Gradient(starter)
+    new_point = starter - step*gradient
+    
+    #updates
+    starter = new_point
+    iterations = iterations+1
+    improvement = normae(step*gradient)/normae(new_point)
+    
+    if (improvement <= tol){
+      break
+    } #the function is "learning" too little at this point
+    
+  } #end of for cycle
+  
+  Result=list(OptimalPoint=starter, OptimalValue=Function(starter), Iterations=iterations)
+  return(Result)
+}
+```
+A better implementation of the gradient descent, using an adaptive learning rate, is quickly presented.  
+The difference in the new method consists in having
+$$
+s_k \ s.t. \frac{\partial H(s_k)}{\partial s_k}=0
+\\
+e.g.: s_k= \underset{s_k}{\operatorname{argmin}} F(x_k-s_k\nabla F(x_k))
+$$
+To execute this "nested optimization" one would need either a fixed analytical solution, or a trusted algorithm (e.g.: Newton's Method, Bisection Method, etc.) to find at any iteration the s to best modulate the stepsize (which is a root, or zero, of some function).  
+  
+As stated earlier, any such method will yield a local solution that may well depend on the starting point, so that it would be better to try our Gradient Descent function with a handful of starters after an inspection of the function
+```{r, echo=FALSE}
+ValoreDist=matrix(data=NA, nrow = 50, ncol = 50)
+for (i1 in 1:50){
+  for(i2 in 1:50){
+    ValoreDist[i1,i2] = Fulldistance(c(i1*20, i2*20), Data$x, Data$y)
+  }
+}
+m<-seq(1,1000, by=20)
+c<-seq(1,1000, by=20)
+z<-ValoreDist
+# Color palette (100 colors)
+col.pal<-colorRampPalette(c("blue", "red"))
+color<-col.pal(100)
+# height of facets
+z.facet.center <- (z[-1, -1] + z[-1, -ncol(z)] + z[-nrow(z), -1] + z[-nrow(z), -ncol(z)])/4
+# Range of the facet center on a 100-scale (number of colors)
+z.facet.range<-cut(z.facet.center, 100)
+
+persp(m, c, z, phi = 45, theta = 45, col=color[z.facet.range], xlab = "latitude", ylab = "longitude",zlab = "FullDistance Function", r=10, d=3)  
+contour(m,c, z, xlab="latitude",ylab="longitude")
+```
+  
+It seems likely that a global minumum would be found in a region of the area slightly off-center, near the contour line of level=$2050$.
+The search could then start from points $A(200,400)$, $B(300,400)$, $C(300,600)$, $D(200,600)$, executing the Gradient Descent Method with learning rate of $0.1$ [code present but hidden], and then starting again from the best of candidate points, with a new (smaller) learning rate.
+```{r, echo=FALSE}
+A<-c(200,400)
+B<-c(300,400)
+C<-c(300,600)
+D<-c(200,600)
+
+caseA<-GDM(A, Function, Gradient, 0.1)
+caseB<-GDM(B, Function, Gradient, 0.1)
+caseC<-GDM(C, Function, Gradient, 0.1)
+caseD<-GDM(D, Function, Gradient, 0.1)
+```
+```{r}
+caseA
+caseB
+caseC
+caseD
+```
+
+Point $B$ seems the most promising starting point, yielding the minimal optimal point, so:
+```{r}
+
+newcaseB<-GDM(B, Function, Gradient, 0.01)
+newcaseB
+```
+With a messier contour outline, or in the absence of it, it might be convenient to sample randomly many starting points and then analize in an analogous way the results.
+
+4. Solve the problem with a package provided by R (for instance, using the function `optimr` within the package `optimx`). Note that it is not required to use the `gradient descent` algorithm to solve the problem, other algorithms can be used as well.  
+Answer:  
+```{r}
+#install.packages("optimx")
+library("optimx")
+#help(optimr)
+
+par<-B #trying a known good candidate
+fn<-function (x) {return(Fulldistance(x, Data$x, Data$y))} #adaptin to the optimr requirements
+
+optimr(par, fn)
+```
+The optimal location point is very close to the ones found from B with the GDM at different learning rates.  
+
+5. Implement the `Stochastic gradient descent` algorithm with mini-batches and use it to solve the problem.  
+Answer:  
+The Stochastic gradient descent is **stochastic** in the selection of addend functions that constitute the gradient. A new sample, mini-batch, is used to compute a faster approximation of the gradient, at each iteration step.
+The technique turns out useful when the addends and parameters are many, and might be quite off-target in simple problems with small mini-batches. A standard typical of machine learning approaches will be followed hereon, with only about a third ($34\%$) of the data points sampled at any iteration.
+
+```{r}
+set.seed(13) #a lucky number
+
+#the implementation is specific to the functions and parameters of this study case
+StochasticGDM <- function(starter, LR=0.01, max_iter=10000, tol=0.000000001, minibatchsize=34) {
+  step = LR
+  iterations = 0
+  
+  normae<-function(v){return(sqrt(sum(v*v))) }
+  
+  for (i in 1:max_iter){
+    minibatch<-sample(length(Data$x), minibatchsize)
+    gradient<-GradFullDist(starter,Data$x[minibatch],Data$y[minibatch])
+    #it has been thus implemented the stochasticity, since we're sampling a mini-batch
+    #to evaluate the gradient(s) of our function(s) (remember: grad F depends on grad d)
+    new_point = starter - step*gradient
+    #updates
+    starter = new_point
+    iterations = iterations+1
+    improvement = normae(step*gradient)/normae(new_point)
+
+    if (improvement <= tol){
+      break
+    }
+    
+  } #end of for cycle
+  Result=list(OptimalPoint=starter, OptimalValue=Fulldistance(starter, Data$x, Data$y),Iterations=iterations)
+  return(Result)
+}
+
+StochasticMinimum<-StochasticGDM(B, 0.005, 100000)
+StochasticMinimum
+```
+
+Once again the results are in the neighbourhood of point $(310,431)$, which confirms the consistency of the presented methods.
+
+

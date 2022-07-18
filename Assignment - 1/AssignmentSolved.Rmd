@@ -1,0 +1,244 @@
+---
+title: 'Assignment 1: Printed circuits'
+author: "Louis Fabrice Tshimanga"
+date: "18-03-2019"
+output: 
+  html_document:
+    code_download: yes
+    df_print: paged
+    highlight: textmate
+    theme: spacelab
+    toc: yes
+    toc_depth: 5
+  pdf_document: 
+    df_print: paged
+    highlight: tango 
+    toc: yes
+    toc_depth: 5
+  html_notebook:
+    df_print: paged
+    highlight: textmate
+    theme: spacelab
+    toc: yes
+    toc_depth: 5
+---
+
+```{r r_setup, include = FALSE}
+## initial settings
+knitr::opts_chunk$set(
+  comment = NA,
+  echo = TRUE,
+  error = TRUE,
+  cache = FALSE,
+  message = FALSE,
+  dpi = 200,
+  warning = FALSE
+)
+
+## width to use when printing tables etc.
+options(
+  width = 250,
+  scipen = 100,
+  max.print = 5000,
+  stringsAsFactors = FALSE
+)
+```
+
+<style>
+.table {
+  width: auto;
+}
+ul, ol {
+  padding-left: 18px;
+}
+pre, code, pre code {
+  overflow: auto;
+  white-space: pre;
+  word-wrap: normal;
+  background-color: #ffffff;
+}
+</style>
+
+## Introduction
+*MC Manufacturing* has contracted to provide *DISCO Electronics* with printed circuit ("PC") boards under
+the following terms: (1) 100,000 PC boards will be delivered to DISCO in one month, and (2) DISCO has an
+option to take delivery of an additional 100,000 boards in three months by giving Aba 30 days notice. DISCO
+will pay $5.00 for each board that it purchases. MC manufactures the PC boards using a batch process, and
+manufacturing costs are as follows: (1) there is a fixed setup cost of $250,000 for any manufacturing batch
+run, regardless of the size of the run, and (2) there is a marginal  manufacturing cost of $2.00 per board
+regardless of the size of the batch run. MC must decide whether to manufacture all 200,000 PC boards now or
+whether to only manufacture 100,000 now and manufacture the other 100,000 boards only if DISCO exercises its
+option to buy those boards. If MC manufactures 200,000 now and DISCO does not exercise its option, then the
+manufacturing cost of the extra 100,000 boards will be totally lost. MC believes there is a 50% chance DISCO
+will exercise its option to buy the additional 100,000 PC boards.
+
+## The decision tree
+
+-  Draw a decision tree for the decision that MC faces.
+- Solution:
+```{r}
+library(yaml)
+library(radiant)
+library(radiant.model)
+
+DecisionTree = yaml.load_file(input = "C:/Users/louis/Documents/YAML/A1_DT1_dtree_input.yaml")
+
+resultTree = dtree(yl = DecisionTree)
+summary(resultTree, input = FALSE, output = TRUE)
+
+plot(resultTree, final = TRUE)
+
+#The trees don't display the net profit of each branch; instead, they display the difference between the latest specified profits and costs. Fixed costs are accounted as soon as possible in the tree. See summaries
+```
+
+
+## Expected value
+-  Determine the preferred course of action for MC assuming it uses expected profit as its decision criterion.
+- Solution:
+
+As evidenced by the tree plot, the first solution (waiting for a second order) has an expected value of \$75,000.00, while the second one (manufacturing a double order a priori) has an expected value of \$100,000.00.
+More precisely:
+```{r}
+SetUp_cost=250000
+unit_cost=2
+unit_price=5
+OneBatch_cost=SetUp_cost+unit_cost*100000
+TwoBatch_cost=SetUp_cost+unit_cost*2*100000
+OneBatch_price=100000*unit_price
+TwoBatch_price=2*OneBatch_price
+pOrder=0.5
+pNotOrder=1-pOrder
+
+EV_Wait=pOrder*(OneBatch_price*2-OneBatch_cost*2)+
+  pNotOrder*(OneBatch_price-OneBatch_cost)
+
+
+EV_Go4Max=pOrder*(TwoBatch_price-TwoBatch_cost)+
+  pNotOrder*(OneBatch_price-TwoBatch_cost)
+
+c("EV_Wait:", EV_Wait, "   EV_Go4Max:", EV_Go4Max)
+```
+By the Expected Values Criterion, *MC Manufacturing* should already manufacture 200 000 boards in the first run.
+
+
+## Utility Function and Certainty Equivalent
+
+Assume that all the information still holds, except assume now that MC has an exponential utility function with a risk tolerance of $100,000.
+
+- Determine MC's preferred course of action.
+-Solution:
+
+The utility function is in the form u(x)=1-exp(-x/R), where x is the monetary value to be evaluated in "utility" terms and R is the risk tolerance [aversion, being positive] factor.
+The payoffs of every branch are to be transformed and the expected utility of every decision must be calculated.
+```{r}
+UtilityFunction <- function(x, R) {
+utility <- 1- exp(-x/R)
+return(utility)
+}
+Rt=100000
+
+to_plot=seq(0, 1000000, by=5)
+plot(to_plot, UtilityFunction(to_plot, Rt), main="Utility Function and Risk Tolerance", col="blue", xlab="MonetaryValue",ylab="UtilityOfValue")
+lines(to_plot[1:Rt], to_plot[1:Rt]/Rt)
+
+
+Wait1=UtilityFunction((OneBatch_price*2-OneBatch_cost*2), Rt)
+#Utility of the net profit if Wait and Second Order
+Wait2=UtilityFunction((OneBatch_price-OneBatch_cost), Rt)
+#Utility of the net profit if Wait and No Second Order
+
+Go4Max1=UtilityFunction((TwoBatch_price-TwoBatch_cost), Rt)
+#Utility of the net profit if Go for 2 batches and Second Order
+Go4Max2=UtilityFunction((OneBatch_price-TwoBatch_cost), Rt)
+#Utility of the net profit if Go for 2 batches and No Second Order
+
+EU_Wait=pOrder*Wait1+pNotOrder*Wait2
+EU_Go4Max=pOrder*Go4Max1+pNotOrder*Go4Max2
+c("EU_Wait:", EU_Wait, "   EU_Go4Max:", EU_Go4Max )
+```
+Expected utilities are somewhat criptic in their interpretation and relation to the problem, hence it's often convenient to define a Certainty Equivalent as the price an agent is willing to buy/sell a risky choice (i.e. based on the expected values, which are given, and utilities, which depend on the subjective risk attitude).
+Anyways, it's measured in the same unit as the x for profits and costs.
+CE=-R*log(EU)
+```{r}
+CertaintyEquivalent = function(EU, R){
+CE = -R*ln(1-EU)
+return(CE)
+}
+
+c("CE_Wait:", CertaintyEquivalent(EU_Wait, Rt), "   CE_Go4Max:", CertaintyEquivalent(EU_Go4Max, Rt) )
+```
+
+Both the methods bring the same answer: if utilities are accounted for, the course of action should be the more conservative, i.e. Waiting for an eventual second order before manifacturing another batch of boards.
+
+## Modification of the process
+
+For the decision in the preceding point, MC Manufacturing has created a new option: it can conduct some research and development in an attempt to lower the fixed setup cost associated with manufacturing a batch of the PC boards. This research and development would not be completed in time to influence the setup cost for the initial batch that DISCO has ordered, but would be completed before the second batch would have to be manufactured. The research and development will cost \$25,000, and there is a 0.4 probability that it will be successful. If it is successful, then the fixed setup cost per batch will be reduced by \$200,000 to \$50,000. If the research and development is not successful, then there will be no reduction in the setup cost. There will be no other benefits from the research and development besides the potential reduction in setup cost for the DISCO reorder.
+
+- Using expected profit as the decision criterion, determine whether MC should undertake the research and development.
+- Solution:
+
+```{r}
+DecisionTreeRD = yaml.load_file(input = "C:/Users/louis/Documents/YAML/A1_DT2_dtree_input.yaml")
+
+resultTreeRD = dtree(yl = DecisionTreeRD)
+summary(resultTreeRD, input = FALSE, output = TRUE)
+
+plot(resultTreeRD, final = TRUE)
+```
+
+The EV shown in the tree comes from the calculations as follows:
+```{r}
+pRDsuccess=0.4
+pRDfail=1-pRDsuccess
+RD_cost=25000
+RD_SetUp_cost=50000
+RD_Batch_cost=RD_SetUp_cost+unit_cost*100000
+EV_RD=pRDsuccess*(pOrder*(TwoBatch_price-OneBatch_cost-RD_Batch_cost)+
+                    pNotOrder*(OneBatch_price-OneBatch_cost))+
+  pRDfail*(pOrder*(TwoBatch_price-2*OneBatch_cost)+
+             pNotOrder*(OneBatch_price-OneBatch_cost))-
+  RD_cost
+c("EV_RD:", EV_RD)
+```
+
+By the Expected Value Criterion, it is not worth to pursue R&D, and manifacturing 200k boards is still the best option.
+
+## Value of Information
+
+-Using expected profit as the decision criteria, determine the value of learning for certain whether the research and development will be successful before a decision has to be made about whether to initially manufacture 100,000 or 200,000 PC boards.
+-Solution:
+
+As it's written, the section implies that *R&D outcome* would be known in advance, but there's no reason to think the *process itself* would be completed before the manufacturing of the first run of boards. Thus the choice would be between waiting for the second order in case of successful R&D, or rather manufacturing the whole 200 000 boards in case the R&D fails.
+The Perfect Information would in fact change the decision tree without introducing any *new manufacturing combination*.
+To determine the value of perfect information, one needs only a Perfect Information Branch to test against the best branch (given the choice criteria), so for clarity a stand-alone Perfect Information Tree/Branch will be used.
+
+```{r}
+DecisionTreePInf = yaml.load_file(input = "C:/Users/louis/Documents/YAML/A1_DT3_dtree_input.yaml")
+
+resultTreePInf = dtree(yl = DecisionTreePInf)
+summary(resultTreePInf, input = FALSE, output = TRUE)
+
+plot(resultTreePInf, final = TRUE)
+```
+
+The Expected Value shown in the tree comes from the following:
+
+```{r}
+EV_Go4Max_RDF=pOrder*(TwoBatch_price-TwoBatch_cost)+
+  pNotOrder*(OneBatch_price-TwoBatch_cost)
+#expected value of running the double batch knowing the R&D fails
+
+EV_Wait_RDS=(pOrder*(TwoBatch_price-OneBatch_cost-RD_Batch_cost)+
+                    pNotOrder*(OneBatch_price-OneBatch_cost))-
+  RD_cost
+#expected value of waiting a second order knowing the R&D succeeds
+
+EV_Knowing=pRDfail*EV_Go4Max_RDF+pRDsuccess*EV_Wait_RDS
+#expected value of the branch of perfect informed action
+
+Value_of_Perfect_Information=EV_Knowing-EV_Go4Max
+#the value of perfect information in the scenario is the difference of expected value with perfect knowledge and maximum expected value with no knowledge
+c("Value_of_Perfect_Information:", Value_of_Perfect_Information)
+
+```
+

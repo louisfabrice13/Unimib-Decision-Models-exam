@@ -1,0 +1,353 @@
+---
+title: 'Assignment 4: A Genethic Algorithm Approach to the Flow Shop Problem'
+author: "Louis Fabrice Tshimanga"
+date: "07 giugno 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Outline
+
+* Introduction to the Flow Shop Problem
+* * Data set and benchmark
+* Introduction to Genetic Algorithms
+* * The GA package as a benchmark
+* * A customized approach, the genalgo() function
+* Instances, Results
+* Conclusions
+* Functions
+
+# Introduction to the Flow Shop Problem
+
+The Flow Shop Problem is a typical sub-class of scheduling problems, that are concerned with the schedule of generic "jobs" that require sequences of "operations" performed by "machines". 
+In particular, the Flow Shop Scheduling Problem has a set of $J$ jobs, any of them divided in $K$ operations, and $K$ machines. 
+For every job, the $i-th$ operation must be performed by the $i-th$ machine, once the previous operation has been completed on the previous machine. 
+This means every job "flows" with no operational interruption through the machine set. Thus the schedule consists on a permutation of the jobs order, to which a makespan is associated. Every operation has its constant processing time, while the completion time of a job depends on the scheduling constraints (machines might complete their operation of a job and have to wait for the previous machine to complete its operation on the successive job, before starting again).
+The makespan is the overall completion time of the last job scheduled, when the $K-th$ machine stops its $J-th$ run.
+The problem consists in finding a permutation of the jobs such that the makespan is minimal.
+
+
+![**Figure 1** an illustration to understand the problem](C:/Users/louis/Desktop/Data Science/1.2/Decision Models/Assignments/Assignment 4/Consegna/flowshop.png)
+  
+  [from source](https://www.researchgate.net/figure/A-simple-flow-shop-scheduling-problem-with-3-jobs-and-3-machines_fig1_251573416)
+
+The Flow Shop Problem solution is typically demanding in computations and tackled with a variety of metaheuristics to provide local minima, possible ranges of the global minimum, and heuristics for the specific calculations. 
+
+### Data set and benchmark
+
+The source of both processing time matrices and makespan bounded solutions are taken from [this summary of E. Taillard, "Benchmarks for basic scheduling problems"](http://mistic.heig-vd.ch/taillard/problemes.dir/ordonnancement.dir/ordonnancement.html).
+In particular, the first 3 instances of the 20 (jobs) by 5 (machine) problem, and first instance of the 20 by 20, 50 by 10, 100 by 5, 200 by 20, 500 by 20.
+
+
+# Introduction to Genetic Algorithms
+
+Genetic Algorithms are a bio-inspired set of algorithms and a metaheuristic approach to [stochastic] optimization.
+Simplifying and ignoring biologically important details, in darwinian theory we generally have populations of individuals that interact with each other and their ecosystem. The concept of fitness captures the chance of survival and reproduction (be it sexual or not) of an organism, rooted in its genes. 
+Given the higher chances of survival&reproduction of the fittest and most fertile, the populations drift generation by generation to characteristics more suited to their habitat.
+
+![**Figure2** a sketch of a "tree of life", by Darwin himself](C:/Users/louis/Desktop/Data Science/1.2/Decision Models/Assignments/Assignment 4/Consegna/DarwinSketch.article.jpg)
+
+Genetic Algorithms have populations of solutions evolve to better solutions, by developing a fitness measure of how good a given solution is, mantaining and spreading its characteristics the fittest it is, through a variety of mechanisms analogous to some of the natural ones (crossover reproduction, random mutation, isolation, and so on).
+In general, the artificial impression of natural selection brings optimal solutions even when starting from randomly generated, unfit individuals.
+
+![**Figure3** genetic optimization in 2D, with individuals eventually "adapting" towards optima](C:/Users/louis/Desktop/Data Science/1.2/Decision Models/Assignments/Assignment 4/Consegna/genopt.png)
+  
+  [from source](https://www.mathworks.com/matlabcentral/mlc-downloads/downloads/submissions/27178/versions/6/previews/html/gaPeaksExample.html)
+
+### The GA package as a benchmark
+
+[The GA package](https://cran.r-project.org/web/packages/GA/index.html) is a "flexible general-purpose toolbox implementing genetic algorithms (GAs) for stochastic optimisation. Binary, real-valued, and permutation representations are available to optimize a fitness function, i.e. a function provided by users depending on their objective function. Several genetic operators are available and can be combined to explore the best settings for the current task. Furthermore, users can define new genetic operators and easily evaluate their performances".  
+The standard format in which it'll be used for the Flow Shop Scheduling Problems (FSSPs) hereby presented, is:
+
+```{r, eval=FALSE}
+gaversion <- ga(type = "permutation", 
+                 fitness = FSSPfitness, #the function defining fitness as inverse of makespan
+                 ProcTimes = ProcTimes, #the matrix of processing times of operations
+                 lower = 1,
+                 upper = 20, #the number of jobs
+                 popSize = 200,
+                 maxiter = 1000, #max n of iterations
+                 run = 200, #max n of iterations with no improvements
+                 pmutation = 0.2, #probability of genetic mutatuion
+                 keepBest = TRUE,
+                 monitor = NULL)
+```
+
+The function returns a specific ga object to inspect and plot.
+
+
+### A customized approach, the genalgo() function
+
+In this section an alternative to the GA package is proposed. The genalgo() function is built on other custom functions, some of which are specific to the FSSPs. After showing a generic launch of genalgo(), the workings we'll be outlined and the building blocks will be cited, whereas the complete functions definitions will be found in the **Functions** section.
+```{r, eval=FALSE}
+gacustom<-genalgo(popsize = , #number of individuals 
+          epoche = , #number of iterations
+          mutation=FALSE, #random gene-swap in offspring
+          mutationRate=0, 
+          diversify=FALSE, #keep track of biodiversity of gene-pool
+          inbred=0)
+```
+
+This instance of genetic algorithm allows for the choice of population size $N$, which is constant, and number of iterations, which is independent of convergence or improvement measures. It is optional to choose a mutation rate and to evaluate "genetic diversity" or "inbreeding" of the population and act on it.  
+At first, a random population is generated as a matrix of schedules, i.e. permutations of the jobs in the problem (numbered from one to their cardinality). The fitness is measured as inverse of the makespan obtained by the schedule, and then couples are sorted proportionally to their fitness, so to "mate".  
+Sexual reproduction is simulated by order 1 crossover (a consecutive sequence of half the genes of a parent, from a random starting point, is integrated by the remaining half of different genes of the other parent, in the order they appear).  
+If mutation is on, a random number is sampled from a uniform distribution between $\{0,1\}$ and a random swap between 2 genes is applied if the sample is smaller than the value of mutation rate. 
+The fitness of the temporary population of size $2N$ encounters a *high* selection pressure. Only the fittest half of the population survives the next generation. 
+If diversify is on, the overall similarity of the population is taken into account and in case of high similarity, a random "exogenous" population of size $N$ is generated and mixed with the indigenous: the overall fittest and a random selection of $N-1$ individuals will constitute the next generation indigenous population.
+Given the problem, similarity is framed as "how distant from the expected random distribution is the distribution of jobs between slots in the schedule". Any population of identical individuals would have a high variance of population column sums (remember a population is a matrix of schedule-rows), each column being a static series of the same number. See **Functions** for details.
+
+genalgo returns a list of 7, Stats (the scores of the population), history (a panel dataframe to plot median and best fitness scores by generation), the BestMakespan, a PossibleBest (the first permutation with BestMakespan), LastGeneration, migrations happened (if any), and BioDiversity, i.e. the similarity value of LastGeneration, the maximum similarity possible and the maximum similarity allowed before mixing.
+
+# Instances, Results
+
+For the first 20 by 5 matrix, ga() population of 200 reaches a best makespan of $1305$ in less than 30 generations, while an equivalent search with genalgo() finds an optimum of $1297$ in half the iterations, with or without mutations. Looking at the plots, with the median converging to the stable best fitness, seems to imply a different optimum won't be reached by (constrained) chance. Running the algorithm with both an enlarged population (300) and extended time (200) allowed to reach a new optimum of $1288$, mixing with esogenous populations anytime the "inbreeding" was at $30\%$. The running times were already extended sensibly. Moreover, this result was beaten mantaining population and generation dimension, without diversifying, with a makespan of $1278$ actually reached short after the 50th iteration. This suggests the vastness of the initialized sample might be way more relevant to the best fitness than most other processes involved.
+From thereon if not specified, a population of 300 was initialized both for ga() and genalgo().
+The second 20 by 5 matrix is re-organized for a $1314$ makespan by ga(), and a $1312$ by default genalgo(), not improved by mutations or mixing.
+The third one is solved by ga() with a $1075$ makespan, whereas genalgo finds an optimum of $1067$, worsened in $1082$ if diversify is on with inbreeding treshold at $30\%$, and tied again with inbreeding treshold at $50\5$, that seems to allow for a coherent optimum and lower, oscillating median maybe pointing to a "potentiality reservoir".
+
+![**Figure4** first run of ga()](C:/Users/louis/Desktop/Data Science/1.2/Decision Models/Assignments/Assignment 4/Consegna/Figure4.png)
+
+  
+    
+  
+      
+![**Figure5a** illustrating the effect of different inbreeding tresholds (0.3)](C:/Users/louis/Desktop/Data Science/1.2/Decision Models/Assignments/Assignment 4/Consegna/03.png)
+  
+  ![**Figure5b** illustrating the effect of different inbreeding tresholds (0.5)](C:/Users/louis/Desktop/Data Science/1.2/Decision Models/Assignments/Assignment 4/Consegna/05.png)
+
+Stepping up to the first 20 by 20 matrix, ga() brings a solution with $2322$ makespan, default genalgo() brings $2282$, $2305$ with signs of possible improvement with diversify (per 0.5), while on mutation the best makespan is $2269$. This confirms the efficiency of the selection method in genalgo(), and the need for more iterations when "biodiversity" is put under control, as it slows the convergence down, even though it keeps the most promising genes in the gene-pool.
+
+On the first 50 by 10, ga() and genalgo(), both on a population of 300 and mutation rate of 0.2, return respectively $3176$ in 1000 iterations and $3119$ in 100 (with very first signs of convergence between median and best value).
+One should now start considering also the size of the ga object, 1.1 Mb in this case.
+
+Mantaining previous constraints, the first 100 by 5 matrix is re-scheduled for a makespan of $5522$ by ga(), and $5495$ by genalgo(). The ga object is now as large as 4.8 Mb, and since genalgo() is so consistently beating ga(), the focus will shift away from ga() results.
+
+On the first 200 by 20 matrix, the best solution found is $12265$, and it looks well likely that more iterations could improve the solution, given the distance between the best makespan and the median of $12427$ (remember that in this setting the solution improvement is severely dampened only when the median coincides with the best solution). The time required for the computations on the available laptop, however, are the main bottleneck and constraint to the exploration of different function settings.
+
+The first 500 by 20 matrix has been resolved down to a $27985$ makespan starting with a population of 200, for 100 iterations. This is the less reproducible result, since the possible permutations are $500\!$ and a sample of hundreds is not representative even of the smallest case here considered.
+
+![**Figure6** genalgo() run on the 500x20](C:/Users/louis/Desktop/Data Science/1.2/Decision Models/Assignments/Assignment 4/Consegna/last.png)
+
+# Conclusions
+
+Not only genetic algorithms are a promising strategy for the solution of FSSPs problem, but also they provide an interesting conceptual frame for heuristics, and many varying mechanisms to be explored and implemented after taking inspiration from the well developed and reliable ones that Nature has been implementing for billion years.
+Yet, the optional mechanisms and the genetic algorithm characteristics per se inflate the search space (or the meta-search-space...), so that it is unaffordable to complete a statistically coherent study of the algorithm performances, on the average student's notebook.
+One must in fact bear in mind that the bigger the FSSP, the less reliable any given solution as an approximation to the global optimum. Even setting a seed, the single result is not reproducible enough.
+Nonetheless, the development of a customized function opens, again, the "search space" in which one thinks with dealing with a problem and actually improves the understanding of the problem beyond the heuristic, genearal and possibly "detached" layer.
+
+
+# Functions
+
+Hereby the both functions upon which genalgo() was built and the ones passed to ga() are showned in their complete definition, following the list of libraries they rely on.
+
+
+
+
+```{r, eval=FALSE}
+#FUNCTIONS AND LIBRARIES, seed
+library(dplyr)
+library(pracma)
+library(curry)
+library(ggplot2)
+
+set.seed(13)
+
+#compute makespan of a matrix *already* describing a schedule in a FSSP
+MakeSpan<-function(ProcTimes){
+  CompTimes<-matrix(NA, nrow = dim(ProcTimes)[1], ncol = dim(ProcTimes)[2])
+  CompTimes[1,]<-ProcTimes[1,]
+  for(i in 2:dim(ProcTimes)[1]){
+    CompTimes[i,1]<-CompTimes[i-1,1]+ProcTimes[i,1]
+    for (j in 1:dim(ProcTimes)[2]){
+      CompTimes[i,j] <- max(CompTimes[i-1,j],CompTimes[i,j-1])+ProcTimes[i,j]
+    }#end of col cycle
+  }#end of row cycle
+  makespan<-CompTimes[dim(CompTimes)[1],dim(CompTimes)[2]]
+  return(makespan)
+}
+
+
+
+#Fitness of a particular schedule of a general matrix
+FSSPfitness<-function(Schedule, ProcTimes) {
+  
+  ProcTimes[,]<-ProcTimes[Schedule,] #rescheduling
+  jobs_rownames<-paste0("job", Schedule)
+  
+  return(1/MakeSpan(ProcTimes))
+}
+
+fitness<-function(Schedule){FSSPfitness(Schedule, ProcTimes)} #possibly better if only 1 matrix is repeatedly run through ga() and alike
+
+
+#Generate, Evaluate a Population
+nJobs = nrow(ProcTimes)
+#to generate a schedule
+generateRandomSchedule <- function(){ vet <- c(1:nJobs)
+randperm(vet) } 
+#to generate a population
+generateRandomPopulation <- function(popSize){t(replicate(popSize,
+                                                          generateRandomSchedule()))}
+#to evaluate fitness of schedule
+evaluateSchedule <- function(fitFun, Schedule){fitFun(Schedule)}
+
+#to evaluate a population
+evaluatePopulation <- function(pop){
+  data.frame(index =c(1:nrow(pop)), fit = apply(pop, 1,
+                                                curry(evaluateSchedule,fitness)))
+}
+
+#to check
+populationStats <- function(gen, scores){
+  bestScore <- max(scores$fit)
+  avgScore <- mean(scores$fit)
+  medianScore <- median(scores$fit)
+  item = list(gen = gen, best = bestScore, avg = avgScore, median =medianScore )
+  class(item)<- "traceItem"
+  return(item)
+}
+
+#fitness proportional selection
+rouletteSelection <- function(scores, pop){
+  idx= sample_n(scores, size = 2, replace = F, weight = scores$fit)$index
+  pop[idx, ]
+}
+
+#crossover
+generateOffspring <- function(p1, p2){
+  swath = floor(length(p1)/2)
+  cut1 = sample(nJobs-swath, 1)
+  cut2 = cut1+swath-1
+  off1 = rep(0, nJobs)
+  sel = p1[cut1:cut2]
+  off1[cut1:cut2]= sel
+  r = p2[!p2 %in% sel] # not the selected and copied ones
+  r1= r[c(1:cut1-1)]
+  r2= r[c(cut1:length(r))]
+  off1[c(1:cut1-1)] = r1
+  off1[c((cut2+1):length(off1))] = r2
+  off1
+}
+
+#mutation
+swapMutation <- function(p){
+  pos = sample(nJobs, 2)
+  p[c(pos[1], pos[2])] = p[c(pos[2], pos[1])]
+  p
+}
+
+#ALL
+genalgo<-function(popsize, epoche, mutation=FALSE, mutationRate=0, diversify=FALSE, inbred=0){
+  pop = generateRandomPopulation(popsize) #first generation
+  scores = evaluatePopulation(pop) #first evaluation
+  history = data.frame(0,0,0,0)
+  colnames(history)<-c("gen", "best", "avg", "median")
+  migrationcount=NULL
+  if(diversify){
+    geni=ncol(pop)
+    individui=nrow(pop)
+    h0mean=mean(c(1:geni))*individui #expected value in a permutation if random and independent
+    situation=colSums(pop) #actual situation
+    distance=sum(abs(situation-h0mean)/h0mean) #actual diversity as distance from expected diversity
+    max_dist=sum(abs(((c(1:geni)*individui) - h0mean)/h0mean)) #max distance, hence minimal diversity, when every column has the same elements 
+    treshold=inbred*max_dist #max distance allowed, so max "inbreeding" or min "biodiversity" allowed, as a fraction of max_dist
+    
+    migrationcount=0
+  }
+  
+  
+  for (gen in 1:epoche){
+    offspring = matrix(NA, 1, nJobs)
+    
+    
+    if(diversify){
+      situation=colSums(pop) 
+      distance=sum(abs(situation-h0mean)/h0mean) 
+      if(distance>=treshold){
+        mixedpop=rbind(pop, generateRandomPopulation(popsize))
+        migrationcount=migrationcount+1
+        newscores = evaluatePopulation(mixedpop)
+        newStats=populationStats(gen, newscores)
+        
+        fittest=mixedpop[1,]
+        for(i in 1:nrow(mixedpop)){
+          if(fitness(mixedpop[i,])==newStats$best){
+            fittest = mixedpop[i,]
+            break}
+        }
+        pop=mixedpop[sample(c(1:(nrow(mixedpop))), size=popsize-1, replace=FALSE),]
+        pop=rbind(pop, fittest)
+      }#migrazione e mix
+      
+    }#post-migrazione
+    popsize = nrow(pop)
+    for (i in 1:popsize){
+      couple<-rouletteSelection(scores, pop) #"sexual selection": 
+      #fitter, likelier to reproduce
+      child<-generateOffspring(couple[1,], couple[2,])
+      if (mutation){ #possible mutant child
+        GeneDice<-runif(1,0,1) 
+        if(GeneDice<=mutationRate){
+          child<-swapMutation(child)
+        }
+      }
+      offspring<-rbind(offspring, child)
+    } #end of reproduction cycle
+    
+    temp_pop = rbind(pop, offspring[2:nrow(offspring),]) #population temporarily of old and new individuals
+    scores = evaluatePopulation(temp_pop) 
+    Stats=populationStats(gen, scores)
+    
+    j=1
+    for (i in 1:nrow(temp_pop)){
+      
+      if (fitness(temp_pop[i,]) > Stats$median ){
+        pop[j,]<-temp_pop[i,]
+        j=j+1
+      } #only the fittest half survives next epoch
+    } #end of "natural selection"
+    
+    
+    
+    scores = evaluatePopulation(pop)
+    Stats=populationStats(gen, scores)
+    history=rbind(history, c(Stats$gen, Stats$best, Stats$avg, Stats$median) )
+  } #end of evolution process
+  
+  best=pop[1,]
+  for(i in 1:nrow(pop)){
+    if(fitness(pop[i,])==Stats$best){
+      best = pop[i,]
+      break
+    }
+  }
+  
+  if(diversify){
+    BiodiversityStats=c(distance, max_dist, treshold)
+  } else {
+    BiodiversityStats=NULL
+  }
+  return(list(Stats = Stats,
+              history = history,
+              BestMakespan = 1/(Stats$best),
+              PossibleBest = best,
+              LastGeneration = pop,
+              migrations = migrationcount,
+              BioDiversity = BiodiversityStats
+  ) #list end
+  )#return
+  
+}#end of function
+
+
+evolutionaryTale<-function(Object){
+  history<-Object$history
+  ggplot(history, aes(history$gen)) + 
+    geom_point(aes(y = history$best, colour = "best fitness")) + 
+    geom_point(aes(y = history$median, colour = "median fitness")) +
+    xlab("Generation")+ylab("Fitness")+ggtitle("Evolutionary history")
+}
+```
